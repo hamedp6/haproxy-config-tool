@@ -12,7 +12,7 @@ TMP_FILE=$(mktemp)
 BACKUP_FILE="${HAPROXY_CFG}.bak"
 
 echo -e "${CYAN}🔄 Checking and installing HAProxy...${RESET}"
-sudo apt update -y && sudo apt install -y haproxy
+sudo apt install -y haproxy
 
 if [ -f "$HAPROXY_CFG" ]; then
     sudo cp "$HAPROXY_CFG" "$BACKUP_FILE"
