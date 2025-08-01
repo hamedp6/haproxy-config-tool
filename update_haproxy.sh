@@ -104,42 +104,22 @@ backend backend_${PORT}
 elif [[ "$ACTION" == "2" ]]; then
     read -p "Enter ports to remove (e.g. 9080 9180): " -a REMOVE_PORTS
 
-    awk -v ports="${REMOVE_PORTS[*]}" '
-    BEGIN {
-        split(ports, p, " ")
-        for (i in p) remove[p[i]] = 1
-        in_block=0
-        print_static=1
-    }
-    /^global$/ {print_static=0}
-    /^defaults$/ {next}
+    cp "$HAPROXY_CFG" "$TMP_FILE"
 
-    {
-        if (print_static) {print}
-    }
-
-    /^frontend frontend_/ || /^backend backend_/ {
-        for (p in remove) {
-            if ($2 == "frontend_frontend_"p || $2 == "backend_backend_"p) {
-                in_block=1
-            }
-        }
-    }
-
-    in_block && /^$/ {in_block=0; next}
-
-    !in_block && !/^$/ {if (!/^global$/ && !/^defaults$/) print}
-    ' "$HAPROXY_CFG" > "$TMP_FILE"
+    for PORT in "${REMOVE_PORTS[@]}"; do
+        # Remove frontend + backend blocks for the port
+        sed -i "/^frontend frontend_${PORT}/,/^$/d" "$TMP_FILE"
+        sed -i "/^backend backend_${PORT}/,/^$/d" "$TMP_FILE"
+        echo -e "${GREEN}✅ Removed port $PORT${RESET}"
+    done
 
     {
         echo "$STATIC_CONFIG"
-        cat "$TMP_FILE"
+        # Append only the remaining lines (excluding old global/defaults)
+        grep -vE "^(global|defaults)" "$TMP_FILE"
     } | sudo tee "$HAPROXY_CFG" > /dev/null
-
-    for PORT in "${REMOVE_PORTS[@]}"; do
-        echo -e "${GREEN}✅ Removed port $PORT${RESET}"
-    done
 fi
+
 
 rm -f "$TMP_FILE"
 
