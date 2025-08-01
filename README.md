@@ -11,4 +11,4 @@ An interactive Bash tool to **add/remove HAProxy frontend/backend ports** with:
 Run on any Ubuntu/Debian server:
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/YOUR_USERNAME/haproxy-config-tool/main/install.sh)
+bash <(curl -s https://raw.githubusercontent.com/hamedp6/haproxy-config-tool/main/install.sh)
