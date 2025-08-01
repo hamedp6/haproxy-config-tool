@@ -12,7 +12,7 @@ TMP_FILE=$(mktemp)
 BACKUP_FILE="${HAPROXY_CFG}.bak"
 
 echo -e "${CYAN}🔄 Checking and installing HAProxy...${RESET}"
-sudo apt install -y haproxy
+sudo apt update -y && sudo apt install -y haproxy
 
 if [ -f "$HAPROXY_CFG" ]; then
     sudo cp "$HAPROXY_CFG" "$BACKUP_FILE"
@@ -58,6 +58,9 @@ echo "1) ➕ Add new ports"
 echo "2) ➖ Remove existing ports"
 read -p "Enter choice (1/2): " ACTION
 
+# 🔹 Extract only existing frontend/backend blocks
+grep -E "^(frontend|backend)" -A 5 "$HAPROXY_CFG" 2>/dev/null > "$TMP_FILE"
+
 if [[ "$ACTION" == "1" ]]; then
     read -p "Enter the server IP: " SERVER_IP
     read -p "Enter ports separated by spaces (e.g. 9080 9180 9280): " -a PORTS
@@ -69,60 +72,43 @@ if [[ "$ACTION" == "1" ]]; then
         BIND_CMD="    bind *:PORT"
     fi
 
-    awk '
-    BEGIN {keep=1}
-    /^global$/ {keep=0}
-    /^defaults$/ {next}
-    keep {print}
-    /^frontend|^backend/ {keep=1}
-    ' "$HAPROXY_CFG" 2>/dev/null > "$TMP_FILE"
-
-    FRONTEND_BACKEND_CONFIG=""
     for PORT in "${PORTS[@]}"; do
         if grep -q "frontend frontend_${PORT}" "$TMP_FILE"; then
             echo -e "${YELLOW}⚠️ Skipping port $PORT (already exists)${RESET}"
             continue
         fi
         BIND_LINES=$(echo -e "$BIND_CMD" | sed "s/PORT/$PORT/g")
-        FRONTEND_BACKEND_CONFIG+="
+        cat <<EOL >> "$TMP_FILE"
+
 frontend frontend_${PORT}
 ${BIND_LINES}
     default_backend backend_${PORT}
 
 backend backend_${PORT}
     server server_${PORT} ${SERVER_IP}:${PORT}
-"
+EOL
         echo -e "${GREEN}✅ Added port $PORT${RESET}"
     done
-
-    {
-        echo "$STATIC_CONFIG"
-        echo "$FRONTEND_BACKEND_CONFIG"
-        cat "$TMP_FILE"
-    } | sudo tee "$HAPROXY_CFG" > /dev/null
 
 elif [[ "$ACTION" == "2" ]]; then
     read -p "Enter ports to remove (e.g. 9080 9180): " -a REMOVE_PORTS
 
-    cp "$HAPROXY_CFG" "$TMP_FILE"
-
     for PORT in "${REMOVE_PORTS[@]}"; do
-        # Remove frontend + backend blocks for the port
         sed -i "/^frontend frontend_${PORT}/,/^$/d" "$TMP_FILE"
         sed -i "/^backend backend_${PORT}/,/^$/d" "$TMP_FILE"
         echo -e "${GREEN}✅ Removed port $PORT${RESET}"
     done
-
-    {
-        echo "$STATIC_CONFIG"
-        # Append only the remaining lines (excluding old global/defaults)
-        grep -vE "^(global|defaults)" "$TMP_FILE"
-    } | sudo tee "$HAPROXY_CFG" > /dev/null
 fi
 
+# 🔹 Rebuild final config
+{
+    echo "$STATIC_CONFIG"
+    cat "$TMP_FILE"
+} | sudo tee "$HAPROXY_CFG" > /dev/null
 
 rm -f "$TMP_FILE"
 
+# 🔹 Validate config
 echo -e "${CYAN}🔍 Validating HAProxy config...${RESET}"
 if sudo haproxy -c -f "$HAPROXY_CFG"; then
     echo -e "${GREEN}✅ Config is valid!${RESET}"
